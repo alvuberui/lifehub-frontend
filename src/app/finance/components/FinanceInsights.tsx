@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -215,6 +215,22 @@ function robustAverage(values: number[]) {
 
 export function ForecastPanel({ movements }: { movements: InsightMovement[] }) {
   const [horizon, setHorizon] = useState(12);
+  const [currentNetWorth, setCurrentNetWorth] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/movements?netWorth=1", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok) throw new Error("No se pudo cargar el patrimonio actual");
+        const value = Number(payload.data);
+        if (!cancelled) setCurrentNetWorth(Number.isFinite(value) ? value : 0);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentNetWorth(0);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const baseline = useMemo(() => {
     const buckets = new Map<string, { ingresos: number; gastos: number; inversiones: number }>();
@@ -242,25 +258,38 @@ export function ForecastPanel({ movements }: { movements: InsightMovement[] }) {
       const gastos = baseline.gastos;
       const balance = ingresos - gastos - baseline.inversiones;
       return { month: date.toLocaleDateString("es-ES", { month: "short", year: "2-digit" }), ingresos: round(ingresos), gastos: round(gastos), ahorroMensual: round(ingresos - gastos), inversiones: round(baseline.inversiones), balance: round(balance), ahorroAcumulado: 0, balanceAcumulado: 0 };
-    }).reduce<Array<{ month: string; ingresos: number; gastos: number; ahorroMensual: number; inversiones: number; balance: number; ahorroAcumulado: number; balanceAcumulado: number }>>((rows, row) => {
+    }).reduce<Array<{ month: string; ingresos: number; gastos: number; ahorroMensual: number; inversiones: number; balance: number; ahorroAcumulado: number; balanceAcumulado: number; patrimonioConInversiones: number; patrimonioSinInversiones: number }>>((rows, row) => {
       const ahorroAcumulado = (rows.at(-1)?.ahorroAcumulado ?? 0) + row.ahorroMensual;
       const balanceAcumulado = (rows.at(-1)?.balanceAcumulado ?? 0) + row.balance;
-      rows.push({ ...row, ahorroAcumulado: round(ahorroAcumulado), balanceAcumulado: round(balanceAcumulado) });
+      const patrimonioConInversiones = (currentNetWorth ?? 0) + ahorroAcumulado;
+      const patrimonioSinInversiones = (currentNetWorth ?? 0) + balanceAcumulado;
+      rows.push({
+        ...row,
+        ahorroAcumulado: round(ahorroAcumulado),
+        balanceAcumulado: round(balanceAcumulado),
+        patrimonioConInversiones: round(patrimonioConInversiones),
+        patrimonioSinInversiones: round(patrimonioSinInversiones),
+      });
       return rows;
     }, []);
-  }, [baseline, horizon]);
+  }, [baseline, horizon, currentNetWorth]);
 
   return (
     <section className="space-y-5">
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Ingreso mensual estimado" value={formatEUR(baseline.ingresos)} hint={`Media robusta de ${baseline.months} meses`} tone="bg-emerald-300" />
         <SummaryCard label="Gasto mensual estimado" value={formatEUR(baseline.gastos)} hint="Se reducen los atípicos para no sobrerreaccionar" tone="bg-rose-300" />
-        <SummaryCard label="Ahorro acumulado estimado" value={formatEUR(forecast.at(-1)?.ahorroAcumulado ?? 0)} hint={`${horizon} meses · ahorro mensual base ${formatEUR(baseline.ingresos - baseline.gastos)}`} tone="bg-amber-300" />
-        <SummaryCard label="Balance acumulado estimado" value={formatEUR(forecast.at(-1)?.balanceAcumulado ?? 0)} hint={`${horizon} meses · descuenta inversiones`} tone="bg-cyan-300" />
+        <SummaryCard label="Inversiones mensuales estimadas" value={formatEUR(baseline.inversiones)} hint="Media robusta de los últimos meses" tone="bg-violet-300" />
+        <SummaryCard label="Ahorro mensual previsto" value={formatEUR(baseline.ingresos - baseline.gastos)} hint="Ingresos menos gastos" tone="bg-amber-300" />
+        <SummaryCard label="Balance mensual previsto" value={formatEUR(baseline.ingresos - baseline.gastos - baseline.inversiones)} hint="Ahorro menos inversiones" tone="bg-cyan-300" />
+        <SummaryCard label="Ahorro acumulado previsto" value={formatEUR(forecast.at(-1)?.ahorroAcumulado ?? 0)} hint={`${horizon} meses · sin restar inversiones`} tone="bg-amber-300" />
+        <SummaryCard label="Balance acumulado previsto" value={formatEUR(forecast.at(-1)?.balanceAcumulado ?? 0)} hint={`${horizon} meses · después de inversiones`} tone="bg-cyan-300" />
+        <SummaryCard label="Patrimonio futuro con inversiones" value={currentNetWorth === null ? "Cargando…" : formatEUR(forecast.at(-1)?.patrimonioConInversiones ?? currentNetWorth)} hint={`Patrimonio actual ${currentNetWorth === null ? "—" : formatEUR(currentNetWorth)} + ahorro acumulado`} tone="bg-emerald-300" />
+        <SummaryCard label="Patrimonio futuro sin inversiones" value={currentNetWorth === null ? "Cargando…" : formatEUR(forecast.at(-1)?.patrimonioSinInversiones ?? currentNetWorth)} hint="Patrimonio actual + balance acumulado" tone="bg-slate-300" />
       </div>
       <article className={`${cardClass} border border-white/[0.08] p-5 md:p-6`}>
         <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="eyebrow">Previsión estimada</p><h2 className="mt-1 text-2xl font-black text-white">Próximos meses</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">La línea base usa los últimos 12 meses y una media recortada para que un movimiento marcado como extraordinario no distorsione tus hábitos habituales.</p></div><label className="text-sm font-semibold text-slate-300">Horizonte<select className="ml-2 rounded-xl border border-white/10 bg-[#081525] px-3 py-2 text-white" value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}><option value={6}>6 meses</option><option value={12}>12 meses</option><option value={24}>24 meses</option></select></label></div>
-        <div className="mt-6 h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={forecast}><CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fill: "#94A3B8", fontSize: 12 }} /><YAxis tick={{ fill: "#94A3B8", fontSize: 12 }} /><Tooltip formatter={(value: unknown) => formatEUR(Number(value))} contentStyle={chartTooltipStyle} /><Line type="monotone" dataKey="ingresos" name="Ingresos" stroke="#34D399" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="gastos" name="Gastos" stroke="#FB7185" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="ahorroAcumulado" name="Ahorros acumulados" stroke="#FBBF24" strokeWidth={3} dot /><Line type="monotone" dataKey="inversiones" name="Inversiones" stroke="#A78BFA" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="balanceAcumulado" name="Balance acumulado" stroke="#22D3EE" strokeWidth={3} dot /></LineChart></ResponsiveContainer></div>
+        <div className="mt-6 h-80"><ResponsiveContainer width="100%" height="100%"><LineChart data={forecast}><CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" /><XAxis dataKey="month" tick={{ fill: "#94A3B8", fontSize: 12 }} /><YAxis tick={{ fill: "#94A3B8", fontSize: 12 }} /><Tooltip formatter={(value: unknown) => formatEUR(Number(value))} contentStyle={chartTooltipStyle} /><Line type="monotone" dataKey="ingresos" name="Ingresos previstos" stroke="#34D399" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="gastos" name="Gastos previstos" stroke="#FB7185" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="inversiones" name="Inversiones previstas" stroke="#A78BFA" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="ahorroAcumulado" name="Ahorro acumulado" stroke="#FBBF24" strokeWidth={2} dot /><Line type="monotone" dataKey="balanceAcumulado" name="Balance acumulado" stroke="#22D3EE" strokeWidth={2} dot /><Line type="monotone" dataKey="patrimonioConInversiones" name="Patrimonio con inversiones" stroke="#10B981" strokeWidth={3} dot /><Line type="monotone" dataKey="patrimonioSinInversiones" name="Patrimonio sin inversiones" stroke="#CBD5E1" strokeWidth={3} dot /></LineChart></ResponsiveContainer></div>
       </article>
     </section>
   );
