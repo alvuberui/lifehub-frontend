@@ -19,11 +19,35 @@ export async function backendErrorResponse(
   response: Response,
   fallback = "Error comunicando con el backend"
 ) {
+  const raw = await response.text().catch(() => "");
+  let payload: unknown = null;
+  try {
+    payload = raw ? JSON.parse(raw) : null;
+  } catch {
+    payload = null;
+  }
+
+  const data = payload as {
+    message?: unknown;
+    detail?: unknown;
+    errors?: Array<{ field?: unknown; message?: unknown }>;
+  } | null;
+  const validationMessage = data?.errors?.length
+    ? data.errors
+        .map((error) => `${typeof error.field === "string" ? `${error.field}: ` : ""}${typeof error.message === "string" ? error.message : "Valor inválido"}`)
+        .join(". ")
+    : null;
+  const backendMessage = validationMessage ||
+    (typeof data?.message === "string" && data.message.trim() ? data.message : null) ||
+    (typeof data?.detail === "string" && data.detail.trim() ? data.detail : null) ||
+    (raw && !payload ? raw.trim() : null);
+
   return NextResponse.json(
     {
       ok: false,
       error: {
-        message: `${fallback} (${response.status})`,
+        message: backendMessage || `${fallback} (${response.status})`,
+        status: response.status,
       },
     },
     { status: response.status }

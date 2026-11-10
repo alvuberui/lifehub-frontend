@@ -1,0 +1,40 @@
+import { serverAuth } from "@/app/lib/auth";
+import { redirect } from "next/navigation";
+import Navbar from "@/app/components/Navbar";
+
+export default async function ProtectedLayout({ children }: { children: React.ReactNode }) {
+  const session = await serverAuth();
+
+  // 1) No autenticado => fuera
+  if (!session?.user?.email) redirect("/?callbackUrl=/finance");
+
+  // 4) sesión caducada/refresh fallido => fuera
+  const tokenError = session?.tokenError;
+  const accessToken = session?.accessToken;
+  if (tokenError || !accessToken) redirect("/?callbackUrl=/finance");
+
+  // 1) y 2) comprobar perfil
+  const apigateway = process.env.API_GATEWAY_URL;
+  if (!apigateway) redirect("/?callbackUrl=/finance"); // si no hay backend, mejor tratar como inválido
+
+  const res = await fetch(
+    `${apigateway}/user/users/isOnboarded?email=${encodeURIComponent(session.user.email)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" }
+  );
+
+  // si falla la comprobación, decide política: yo recomiendo “fuera” para evitar loops raros
+  if (!res.ok) redirect("/?callbackUrl=/finance");
+
+  const data = (await res.json()) as { result: boolean };
+
+  // 1) autenticado SIN perfil => al onboarding
+  if (data.result === false) redirect("/finance/onboarding");
+
+  // ✅ autenticado CON perfil => OK
+  return (
+    <>
+      <Navbar subtitle="Dashboard" />
+      {children}
+    </>
+  );
+}

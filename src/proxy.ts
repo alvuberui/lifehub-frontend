@@ -4,7 +4,27 @@ import { auth } from "@/app/lib/auth";
 export default auth((req) => {
   const { pathname, searchParams } = req.nextUrl;
 
-  if (!(pathname === "/app" || pathname.startsWith("/app/"))) {
+  // Conserva los enlaces antiguos de FinanzApp durante la transición.
+  if (pathname === "/app" || pathname.startsWith("/app/")) {
+    const url = req.nextUrl.clone();
+    url.pathname = `/finance${pathname.slice("/app".length)}`;
+    return NextResponse.redirect(url);
+  }
+
+  if (
+    !(
+      pathname === "/dashboard" ||
+      pathname.startsWith("/dashboard/") ||
+      pathname === "/finance" ||
+      pathname.startsWith("/finance/")
+      || pathname === "/home"
+      || pathname.startsWith("/home/")
+      || pathname === "/connections"
+      || pathname.startsWith("/connections/")
+      || pathname === "/shared-spaces"
+      || pathname.startsWith("/shared-spaces/")
+    )
+  ) {
     return NextResponse.next();
   }
 
@@ -32,5 +52,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/app/:path*"],
+  matcher: ["/dashboard/:path*", "/finance/:path*", "/home/:path*", "/connections/:path*", "/shared-spaces/:path*", "/app/:path*"],
 };

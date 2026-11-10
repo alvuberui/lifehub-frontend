@@ -25,6 +25,7 @@ type BackendMovement = {
   tagName?: string | null;
   tagColor?: string | null;
   description?: string | null;
+  includeInForecast?: boolean;
 };
 
 type EditMovementIncoming = {
@@ -33,6 +34,7 @@ type EditMovementIncoming = {
   date: string; // YYYY-MM-DD
   tagId?: number | null;
   description?: string | undefined;
+  includeInForecast?: boolean;
 };
 
 type EditMovementToBackend = {
@@ -41,6 +43,7 @@ type EditMovementToBackend = {
   date: string;
   tagId?: number | null;
   description?: string;
+  includeInForecast?: boolean;
 };
 
 function mapBackendToFront(t: BackendMovementType): FrontMovementType {
@@ -181,7 +184,7 @@ export const PUT = serverAuth(async (req, ctx: RouteContext) => {
       );
     }
 
-    const { movementType, amount, date, tagId, description } = body;
+    const { movementType, amount, date, tagId, description, includeInForecast } = body;
 
     const allowedTypes: FrontMovementType[] = [
       "BENEFIT",
@@ -244,6 +247,13 @@ export const PUT = serverAuth(async (req, ctx: RouteContext) => {
       }
     }
 
+    if (includeInForecast !== undefined && typeof includeInForecast !== "boolean") {
+      return NextResponse.json(
+        { ok: false, error: { message: "includeInForecast inválido" } },
+        { status: 400 }
+      );
+    }
+
     const url = `${baseUrl()}/movement/movements/${id}`;
 
     const payloadToBackend: EditMovementToBackend = {
@@ -254,6 +264,7 @@ export const PUT = serverAuth(async (req, ctx: RouteContext) => {
         ? { tagId: tagId === null ? null : tagId }
         : {}),
       ...(description !== undefined ? { description: description.trim() } : {}),
+      ...(includeInForecast !== undefined ? { includeInForecast } : {}),
     };
 
     const res = await fetch(url, {

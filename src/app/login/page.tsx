@@ -5,7 +5,7 @@ import { signIn } from "next-auth/react";
 
 export default function Login({ searchParams }: { searchParams: { callbackUrl?: string } }) {
   useEffect(() => {
-    void signIn("keycloak", { callbackUrl: searchParams?.callbackUrl ?? "/" });
+    void signIn("keycloak", { callbackUrl: searchParams?.callbackUrl ?? "/dashboard" });
   }, [searchParams?.callbackUrl]);
 
   return <></>;

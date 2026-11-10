@@ -19,6 +19,7 @@ type BackendMovement = {
   tagColor?: string | null;
 
   description: string;
+  includeInForecast?: boolean;
 };
 
 type BackendAnnualMetric =
@@ -61,6 +62,8 @@ type CreateMovementIncoming = {
   date: string; // YYYY-MM-DD
   tagId?: number;
   description?: string;
+  includeInForecast?: boolean;
+  ownerEmail?: string;
 };
 
 type CreateMovementToBackend = {
@@ -74,6 +77,8 @@ type CreateMovementToBackend = {
   date: string;
   tagId?: number;
   description?: string;
+  includeInForecast: boolean;
+  ownerEmail?: string;
 };
 
 function pad2(n: number) {
@@ -156,7 +161,7 @@ export const POST = serverAuth(async (req) => {
       );
     }
 
-    const { movementType, amount, date, tagId, description } = body;
+    const { movementType, amount, date, tagId, description, includeInForecast = true, ownerEmail } = body;
 
     const allowedTypes: FrontMovementType[] = [
       "BENEFIT",
@@ -221,6 +226,20 @@ export const POST = serverAuth(async (req) => {
       );
     }
 
+    if (ownerEmail !== undefined && (typeof ownerEmail !== "string" || ownerEmail.trim().length > 320)) {
+      return NextResponse.json(
+        { ok: false, error: { message: "ownerEmail inválido" } },
+        { status: 400 }
+      );
+    }
+
+    if (typeof includeInForecast !== "boolean") {
+      return NextResponse.json(
+        { ok: false, error: { message: "includeInForecast inválido" } },
+        { status: 400 }
+      );
+    }
+
     const url = `${baseUrl()}/movement/movements`;
 
     const payloadToBackend: CreateMovementToBackend = {
@@ -230,6 +249,8 @@ export const POST = serverAuth(async (req) => {
       date,
       ...(tagId ? { tagId } : {}),
       description: description?.trim() ?? "",
+      includeInForecast,
+      ...(ownerEmail?.trim() ? { ownerEmail: ownerEmail.trim() } : {}),
     };
 
     const res = await fetch(url, {
@@ -277,6 +298,36 @@ export const GET = serverAuth(async (req) => {
 
     const { searchParams } = new URL(req.url);
     const base = baseUrl();
+
+    // MODO "SHARED SUMMARY": /api/movements?sharedSummary=1
+    const sharedSummaryFlag = searchParams.get("sharedSummary");
+    if (sharedSummaryFlag === "1" || sharedSummaryFlag === "true" || sharedSummaryFlag === "yes") {
+      const res = await fetch(`${base}/movement/movements/shared-summary`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      });
+      if (!res.ok) return await backendErrorResponse(res, "Error obteniendo el resumen compartido");
+      return NextResponse.json({ ok: true, data: await res.json(), meta: { metric: "SHARED_SUMMARY" } }, { status: 200 });
+    }
+
+    // MODO "SHARED DETAILS": solo devuelve movimientos de conexiones con
+    // DETAIL_READ o superior. El backend aplica la autorización real.
+    const sharedDetailsFlag = searchParams.get("sharedDetails");
+    if (sharedDetailsFlag === "1" || sharedDetailsFlag === "true" || sharedDetailsFlag === "yes") {
+      const sharedFrom = searchParams.get("from");
+      const sharedTo = searchParams.get("to");
+      if (!sharedFrom || !sharedTo || !isValidYmd(sharedFrom) || !isValidYmd(sharedTo) || sharedFrom > sharedTo) {
+        return NextResponse.json({ ok: false, error: { message: "El rango compartido no es válido" } }, { status: 400 });
+      }
+      const res = await fetch(`${base}/movement/movements/shared-details?from=${sharedFrom}&to=${sharedTo}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      });
+      if (!res.ok) return await backendErrorResponse(res, "Error obteniendo los detalles compartidos");
+      return NextResponse.json({ ok: true, data: await res.json(), meta: { metric: "SHARED_DETAILS", from: sharedFrom, to: sharedTo } }, { status: 200 });
+    }
 
     // MODO "NET WORTH": /api/movements?netWorth=1
     const netWorthFlag = searchParams.get("netWorth");
@@ -446,6 +497,32 @@ export const GET = serverAuth(async (req) => {
         { ok: true, data, meta: { metric: metricRaw } },
         { status: 200 }
       );
+    }
+
+    // ✅ MODO "RANGE": /api/movements?from=YYYY-MM-DD&to=YYYY-MM-DD
+    // Se usa para los análisis anuales, históricos y la previsión.
+    const rangeFrom = searchParams.get("from");
+    const rangeTo = searchParams.get("to");
+    if (rangeFrom || rangeTo) {
+      if (!rangeFrom || !rangeTo || !isValidYmd(rangeFrom) || !isValidYmd(rangeTo) || rangeFrom > rangeTo) {
+        return NextResponse.json(
+          { ok: false, error: { message: "El rango de fechas no es válido" } },
+          { status: 400 }
+        );
+      }
+
+      const url = `${base}/movement/movements?from=${rangeFrom}&to=${rangeTo}`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      });
+
+      if (!res.ok) return await backendErrorResponse(res, "Error obteniendo los movimientos del periodo");
+
+      const data = (await res.json()) as BackendMovement[];
+      data.sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : (a.id ?? 0) - (b.id ?? 0));
+      return NextResponse.json({ ok: true, data, meta: { from: rangeFrom, to: rangeTo } }, { status: 200 });
     }
 
     // ✅ MODO "MOVEMENTS" mensual (default): /api/movements?year=YYYY&month=0-11

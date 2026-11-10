@@ -4,8 +4,8 @@ import "./globals.css";
 import "@/styles/brand.css";
 
 export const metadata = {
-  title: "FinanzApp",
-  description: "Finanzas personales, fácil y moderno",
+  title: "LifeHub",
+  description: "Tu espacio personal para organizar todos los ámbitos de tu vida",
 };
 
 export default function RootLayout({

@@ -82,14 +82,18 @@ navegador no recibe el access token de Keycloak.
 - `/`: landing pública y redirección según autenticación y onboarding.
 - `/login`: inicio de sesión mediante Keycloak.
 - `/logout`: cierre de sesión.
-- `/app`: dashboard protegido.
-- `/app/onboarding`: configuración inicial del usuario.
-- `/app/movements/create`: creación de movimientos.
-- `/app/movements/update/[id]`: edición de movimientos.
-- `/app/tags`: listado de etiquetas.
-- `/app/tags/create`: creación de etiquetas.
-- `/app/tags/[id]`: detalle de etiqueta.
-- `/app/user`: perfil y patrimonio neto.
+- `/dashboard`: hub autenticado de LifeHub y selector de módulos.
+- `/finance`: dashboard protegido de FinanzApp.
+- `/finance/onboarding`: configuración inicial del usuario en FinanzApp.
+- `/finance/movements/create`: creación de movimientos.
+- `/finance/movements/update/[id]`: edición de movimientos.
+- `/finance/tags`: listado de etiquetas.
+- `/finance/tags/create`: creación de etiquetas.
+- `/finance/tags/[id]`: detalle de etiqueta.
+- `/finance/user`: perfil y patrimonio neto.
+
+Durante la transición, las rutas antiguas `/app/*` redirigen a sus equivalentes
+`/finance/*`.
 
 ### Rutas BFF
 
