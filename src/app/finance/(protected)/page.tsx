@@ -1588,7 +1588,12 @@ export default function AppDashboardPage() {
         ) : null}
 
         {mode === "forecast" ? (
-          <ForecastPanel movements={toInsightMovements(activePeriodMovements)} />
+          <ForecastPanel
+            movements={toInsightMovements(activePeriodMovements)}
+            scope={dashboardScope}
+            selectedOwnerEmail={effectiveSharedOwner}
+            sharedOwners={sharedOwners}
+          />
         ) : null}
 
         <ConfirmDialog
